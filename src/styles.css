@@ -1,0 +1,107 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-cream: var(--cream);
+  --color-cream-muted: var(--cream-muted);
+  --color-navy: var(--navy);
+  --color-navy-elevated: var(--navy-elevated);
+  --color-orange: var(--orange);
+  --color-income: var(--income);
+  --color-expense: var(--expense);
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --radius: 16px;
+
+  /* Brand */
+  --navy: #091A25;
+  --navy-elevated: #0F2632;
+  --cream: #EDDABA;
+  --cream-muted: rgba(237, 218, 186, 0.6);
+  --orange: #FF5404;
+  --income: #4CAF50;
+  --expense: #FF5404;
+
+  /* Semantic mapping (dark by default) */
+  --background: var(--navy);
+  --foreground: var(--cream);
+  --card: var(--navy-elevated);
+  --card-foreground: var(--cream);
+  --popover: var(--navy-elevated);
+  --popover-foreground: var(--cream);
+  --primary: var(--orange);
+  --primary-foreground: #ffffff;
+  --secondary: var(--navy-elevated);
+  --secondary-foreground: var(--cream);
+  --muted: var(--navy-elevated);
+  --muted-foreground: rgba(237, 218, 186, 0.6);
+  --accent: var(--orange);
+  --accent-foreground: #ffffff;
+  --destructive: var(--orange);
+  --destructive-foreground: #ffffff;
+  --border: rgba(237, 218, 186, 0.18);
+  --input: rgba(237, 218, 186, 0.5);
+  --ring: var(--orange);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html, body, #root {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    min-height: 100%;
+  }
+
+  body {
+    -webkit-font-smoothing: antialiased;
+  }
+
+  input::placeholder, textarea::placeholder {
+    color: rgba(237, 218, 186, 0.5);
+  }
+}
+
+/* Mobile frame */
+.app-shell {
+  max-width: 420px;
+  margin: 0 auto;
+  min-height: 100vh;
+  position: relative;
+  background-color: var(--navy);
+}
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
