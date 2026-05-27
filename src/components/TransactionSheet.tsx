@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { CATEGORIES, type Transaction, type TxType } from "@/lib/types";
+import { 
+  CATEGORIES, 
+  INCOME_CATEGORIES, 
+  EXPENSE_CATEGORIES, 
+  type Transaction, 
+  type TxType 
+} from "@/lib/types"; // Importação das novas listas específicas de categorias
 import { useStore } from "@/lib/store";
 import * as LucideIcons from "lucide-react";
 import { X } from "lucide-react";
@@ -44,6 +50,16 @@ export function TransactionSheet({ open, onClose, editing }: Props) {
     }
   }, [editing, open]);
 
+  // 1. FUNCIONALIDADE: Ajusta a categoria padrão ao alternar o tipo da transação (Receita ou Despesa)
+  const handleTypeChange = (newType: TxType) => {
+    setType(newType);
+    if (newType === "income") {
+      setCategoryId("salario"); // "Salários" é o padrão para receitas
+    } else {
+      setCategoryId("alimentacao"); // "Alimentação" é o padrão para despesas
+    }
+  };
+
   // Retorna nulo se o painel não estiver configurado para ser exibido (aberto)
   if (!open) return null;
 
@@ -82,7 +98,7 @@ export function TransactionSheet({ open, onClose, editing }: Props) {
           {(["income", "expense"] as TxType[]).map((t) => (
             <button
               key={t}
-              onClick={() => setType(t)}
+              onClick={() => handleTypeChange(t)}
               className={
                 "py-2.5 rounded-full text-sm font-semibold transition-colors " +
                 (type === t ? "bg-orange text-white" : "text-cream-muted")
@@ -93,41 +109,41 @@ export function TransactionSheet({ open, onClose, editing }: Props) {
           ))}
         </div>
 
-        {/* Campo de entrada para Valor (numérico/decimal) */}
+        {/* 2. FUNCIONALIDADE: Campo de entrada para Valor (Corrigido para tamanho padronizado h-11) */}
         <label className="block text-xs text-cream-muted mb-2">Valor</label>
-        <div className="flex items-baseline gap-2 mb-5 px-4 py-4 rounded-xl bg-navy border border-cream/20">
-          <span className="text-cream-muted text-lg">R$</span>
+        <div className="flex items-center gap-2 mb-5 px-4 h-11 rounded-xl bg-navy border border-cream/20">
+          <span className="text-cream-muted text-sm font-semibold">R$</span>
           <input
             inputMode="decimal"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="0,00"
-            className="bg-transparent outline-none text-cream text-3xl font-bold w-full"
+            className="bg-transparent outline-none text-cream text-sm font-semibold w-full"
           />
         </div>
 
-        {/* Campo de entrada para Descrição */}
+        {/* 4. FUNCIONALIDADE: Campo de entrada para Descrição (Corrigido para tamanho padronizado h-11) */}
         <label className="block text-xs text-cream-muted mb-2">Descrição</label>
         <input
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Ex: Almoço"
-          className="w-full mb-4 px-4 py-3 rounded-xl bg-navy border border-cream/20 text-cream outline-none"
+          className="w-full mb-4 px-4 h-11 rounded-xl bg-navy border border-cream/20 text-cream outline-none text-sm"
         />
 
-        {/* Campo de entrada para Data */}
+        {/* 5. FUNCIONALIDADE: Campo de entrada para Data (Corrigido para tamanho padronizado h-11) */}
         <label className="block text-xs text-cream-muted mb-2">Data</label>
         <input
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          className="w-full mb-5 px-4 py-3 rounded-xl bg-navy border border-cream/20 text-cream outline-none"
+          className="w-full mb-5 px-4 h-11 rounded-xl bg-navy border border-cream/20 text-cream outline-none text-sm"
         />
 
-        {/* Seleção de Categorias */}
+        {/* 3. FUNCIONALIDADE: Seleção dinâmica de Categorias baseada no Tipo (Receita / Despesa) */}
         <label className="block text-xs text-cream-muted mb-2">Categoria</label>
         <div className="grid grid-cols-4 gap-2 mb-6">
-          {CATEGORIES.map((c) => {
+          {(type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map((c) => {
             const Icon = Icons[c.icon] ?? Icons.Circle;
             const active = c.id === categoryId;
             return (

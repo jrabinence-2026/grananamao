@@ -76,7 +76,7 @@ export function HomePage() {
         {/* Cabeçalho da lista de transações recentes */}
         <div className="flex items-center justify-between pt-2">
           <h2 className="text-base font-bold text-cream">Transações recentes</h2>
-          <Link to="/transactions" className="text-xs text-orange font-semibold">Ver tudo</Link>
+          <Link to="/home" search={{ tab: "transactions" }} className="text-xs text-orange font-semibold">Ver tudo</Link>
         </div>
 
         {/* Lista de Transações Recentes */}

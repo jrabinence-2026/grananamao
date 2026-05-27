@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, TrendingUp } from "lucide-react"; // Importação do TrendingUp para a marca d'água
 import { useStore, fmtBRL } from "@/lib/store";
 import { CATEGORIES } from "@/lib/types";
 
@@ -38,6 +38,9 @@ export function ChartsPage() {
   const total = byCat.reduce((s, x) => s + x.total, 0);
   const biggest = byCat[0];
 
+  // 1. FUNCIONALIDADE: Calcula o percentual que a maior despesa representa sobre o total de gastos do mês
+  const biggestPct = total > 0 && biggest ? Math.round((biggest.total / total) * 100) : 0;
+
   // Mapeia e segmenta o acumulado para desenhar o gráfico Donut de rosca
   let acc = 0;
   const segments = byCat.map((x) => {
@@ -68,6 +71,27 @@ export function ChartsPage() {
       </div>
 
       <div className="px-4 space-y-4">
+        
+        {/* 2. FUNCIONALIDADE: Card de Mini Insights do Mês no topo */}
+        <div className="rounded-2xl bg-navy-elevated p-4 border border-cream/5 relative overflow-hidden flex justify-between items-center">
+          <div className="relative z-10">
+            <p className="text-[10px] tracking-widest text-cream-muted/65 font-bold uppercase mb-1">
+              Insight do mês
+            </p>
+            <p className="text-sm font-medium text-cream">
+              {biggest ? (
+                <>
+                  Maior gasto: <span className="text-orange font-bold">{biggest.cat.label}</span> — <span className="text-cream font-bold">{biggestPct}%</span>
+                </>
+              ) : (
+                "Nenhum gasto registrado neste mês."
+              )}
+            </p>
+          </div>
+          {/* Ícone de tendência como marca d'água decorativa no canto do card */}
+          <TrendingUp size={44} className="absolute right-3.5 bottom-1 text-cream-muted/10 pointer-events-none" />
+        </div>
+
         {/* Gráfico de barras simples para gasto acumulado por categorias */}
         <div className="rounded-2xl bg-navy-elevated p-4 border border-cream/5">
           <p className="text-xs text-cream-muted mb-3">Despesas por categoria</p>
