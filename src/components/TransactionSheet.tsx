@@ -8,7 +8,7 @@ import {
 } from "@/lib/types"; // Importação das novas listas específicas de categorias
 import { useStore } from "@/lib/store";
 import * as LucideIcons from "lucide-react";
-import { X } from "lucide-react";
+import { X, AlertCircle, Loader2 } from "lucide-react";
 
 // Dicionário dinâmico de ícones da biblioteca Lucide
 type IconMap = Record<string, LucideIcons.LucideIcon>;
@@ -32,6 +32,10 @@ export function TransactionSheet({ open, onClose, editing }: Props) {
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [categoryId, setCategoryId] = useState("alimentacao");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Atualiza ou reinicializa os campos do formulário ao abrir ou alterar a transação selecionada
   useEffect(() => {
@@ -48,6 +52,10 @@ export function TransactionSheet({ open, onClose, editing }: Props) {
       setDate(new Date().toISOString().slice(0, 10));
       setCategoryId("alimentacao");
     }
+    setErrorMsg(null);
+    setIsSaving(false);
+    setIsConfirmingDelete(false);
+    setIsDeleting(false);
   }, [editing, open]);
 
   // 1. FUNCIONALIDADE: Ajusta a categoria padrão ao alternar o tipo da transação (Receita ou Despesa)
@@ -64,13 +72,43 @@ export function TransactionSheet({ open, onClose, editing }: Props) {
   if (!open) return null;
 
   // Lógica de salvar transação
-  const save = () => {
-    const value = parseFloat(amount.replace(",", "."));
-    if (!description || !value || value <= 0) return;
-    const payload = { type, description, amount: value, date, categoryId };
-    if (editing) updateTx({ ...editing, ...payload });
-    else addTx(payload);
-    onClose();
+  const save = (e?: React.SyntheticEvent) => {
+    if (e) e.preventDefault(); // Evita que o evento de toque/clique se perca se o teclado fechar
+    
+    // Limpa a string de formatação errada
+    const cleanStr = amount.replace(/[^\d.,]/g, "");
+    let value = 0;
+    if (cleanStr.includes(",")) {
+      // Tem vírgula, então o ponto (se houver) é separador de milhar
+      value = parseFloat(cleanStr.replace(/\./g, "").replace(",", "."));
+    } else {
+      value = parseFloat(cleanStr);
+    }
+
+    if (!value || value <= 0) {
+      setErrorMsg("Por favor, digite um valor válido maior que zero.");
+      return;
+    }
+    setErrorMsg(null);
+    
+    // Se a descrição estiver vazia, usa o nome da categoria selecionada
+    let finalDesc = description.trim();
+    if (!finalDesc) {
+      const allCats = [...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES];
+      const selectedCat = allCats.find(c => c.id === categoryId);
+      finalDesc = selectedCat ? selectedCat.label : (type === "income" ? "Receita" : "Despesa");
+    }
+
+    const payload = { type, description: finalDesc, amount: value, date, categoryId };
+    
+    // Animação de carregamento (delayzinho tátil)
+    setIsSaving(true);
+    setTimeout(() => {
+      if (editing) updateTx({ ...editing, ...payload });
+      else addTx(payload);
+      setIsSaving(false);
+      onClose();
+    }, 400);
   };
 
   return (
@@ -92,6 +130,14 @@ export function TransactionSheet({ open, onClose, editing }: Props) {
             <X size={22} />
           </button>
         </div>
+
+        {/* Mensagem de Erro Profissional */}
+        {errorMsg && (
+          <div className="flex items-center gap-2 mb-4 p-3 rounded-xl bg-orange/10 border border-orange/20 text-orange animate-in fade-in zoom-in-95 duration-200">
+            <AlertCircle size={18} className="shrink-0" />
+            <span className="text-xs font-semibold">{errorMsg}</span>
+          </div>
+        )}
 
         {/* Alternador de Tipo: Despesa ou Receita */}
         <div className="grid grid-cols-2 p-1 rounded-full bg-navy mb-5 border border-cream/10">
@@ -131,14 +177,16 @@ export function TransactionSheet({ open, onClose, editing }: Props) {
           className="w-full mb-4 px-4 h-11 rounded-xl bg-navy border border-cream/20 text-cream outline-none text-sm"
         />
 
-        {/* 5. FUNCIONALIDADE: Campo de entrada para Data (Corrigido para tamanho padronizado h-11) */}
+        {/* 5. FUNCIONALIDADE: Campo de entrada para Data com tamanho padronizado e legível no celular */}
         <label className="block text-xs text-cream-muted mb-2">Data</label>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="w-full mb-5 px-4 h-11 rounded-xl bg-navy border border-cream/20 text-cream outline-none text-sm"
-        />
+        <div className="flex items-center gap-2 mb-5 px-4 h-11 rounded-xl bg-navy border border-cream/20">
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="bg-transparent outline-none text-cream text-sm w-full h-full"
+          />
+        </div>
 
         {/* 3. FUNCIONALIDADE: Seleção dinâmica de Categorias baseada no Tipo (Receita / Despesa) */}
         <label className="block text-xs text-cream-muted mb-2">Categoria</label>
@@ -173,23 +221,68 @@ export function TransactionSheet({ open, onClose, editing }: Props) {
 
         {/* Botões de Ação Final */}
         <button
-          onClick={save}
-          className="w-full py-3.5 rounded-xl bg-orange text-white font-semibold"
+          onPointerDown={!isSaving ? save : undefined} // Dispara antes do teclado fechar no celular, evitando cancelamento de clique
+          onClick={!isSaving ? save : undefined} // Fallback para desktop
+          disabled={isSaving}
+          className="w-full py-3.5 rounded-xl bg-orange text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-70 transition-opacity"
         >
-          Salvar
+          {isSaving ? (
+            <>
+              <Loader2 size={18} className="animate-spin" />
+              Salvando...
+            </>
+          ) : (
+            "Salvar"
+          )}
         </button>
 
         {/* Botão de Excluir (exibido apenas se estiver em modo de edição) */}
         {editing && (
-          <button
-            onClick={() => {
-              deleteTx(editing.id);
-              onClose();
-            }}
-            className="w-full mt-2 py-3 rounded-xl border border-orange/40 text-orange font-semibold"
-          >
-            Excluir
-          </button>
+          <div className="mt-2">
+            {!isConfirmingDelete ? (
+              <button
+                type="button"
+                onClick={() => setIsConfirmingDelete(true)}
+                disabled={isSaving}
+                className="w-full py-3 rounded-xl border border-orange/40 text-orange font-semibold disabled:opacity-50 transition-opacity"
+              >
+                Excluir
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 animate-in fade-in zoom-in-95 duration-200">
+                <button
+                  type="button"
+                  onClick={() => setIsConfirmingDelete(false)}
+                  disabled={isDeleting}
+                  className="flex-1 py-3 rounded-xl border border-cream/20 text-cream-muted font-semibold disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDeleting(true);
+                    setTimeout(() => {
+                      deleteTx(editing.id);
+                      setIsDeleting(false);
+                      onClose();
+                    }, 400);
+                  }}
+                  disabled={isDeleting}
+                  className="flex-1 py-3 rounded-xl bg-orange/20 border border-orange text-orange font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isDeleting ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Excluindo...
+                    </>
+                  ) : (
+                    "Confirmar"
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

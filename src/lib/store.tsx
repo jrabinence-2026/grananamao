@@ -1,16 +1,24 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, useRef, type ReactNode } from "react";
 import type { Goal, Transaction } from "./types";
 import { supabase } from "./supabase";
 
-// Chaves para persistência de dados no LocalStorage
-const TX_KEY = "fintrack.v2.transactions";
-const GOAL_KEY = "fintrack.v2.goals";
+// Função auxiliar para gerar UUIDs compatíveis em navegadores mobile que bloqueiam crypto.randomUUID (contexto HTTP)
+function safeUUID() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 // 1. FUNCIONALIDADE: Dados extras do perfil coletados no cadastro
 export interface ProfileData {
   name: string;
   username: string;
-  cpf: string;       // Apenas dígitos (11 chars)
+  phone: string;       // Apenas dígitos
   birthDate: string; // Formato ISO: YYYY-MM-DD
 }
 
@@ -22,37 +30,42 @@ interface Store {
   updateTx: (t: Transaction) => void;
   deleteTx: (id: string) => void;
   addGoal: (g: Omit<Goal, "id">) => void;
-  user: { name: string; email: string } | null;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    username: string;
+    phone: string;
+    birth_date: string;
+    avatar_key?: string;
+    custom_avatar_base64?: string;
+    monthly_limit: number;
+  } | null;
   isAuthed: boolean;
+  theme: "dark" | "light";
+  toggleTheme: () => void;
   // 2. FUNCIONALIDADE: Flag que indica se a sessão Supabase ainda está sendo verificada
   initializing: boolean;
   // 3. FUNCIONALIDADE: Estado de carregamento durante chamadas assíncronas ao Supabase
   loading: boolean;
   // 4. FUNCIONALIDADE: Mensagem de erro/sucesso retornada pelo Supabase
   authError: string | null;
-  // 5. FUNCIONALIDADE: Login via CPF ou nome de usuário + senha real pelo Supabase
+  // 5. FUNCIONALIDADE: Login via Celular ou nome de usuário + senha real pelo Supabase
   login: (identifier: string, password: string) => Promise<void>;
   // 6. FUNCIONALIDADE: Cadastro com email, senha e dados de perfil no Supabase
   signUp: (email: string, password: string, profile: ProfileData) => Promise<void>;
   // 7. FUNCIONALIDADE: Logout via Supabase Auth
   logout: () => Promise<void>;
+  // Login com Google
+  loginWithGoogle: () => Promise<void>;
+  // Recarrega o perfil do usuário ativo
+  reloadProfile: () => Promise<void>;
+  // Atualiza os dados do usuário no estado local imediatamente (otimista)
+  updateUserLocal: (updates: Partial<Store["user"]>) => void;
 }
 
 // Criação do contexto do React para compartilhamento global de estado
 const Ctx = createContext<Store | null>(null);
-
-/**
- * Utilitário para carregar dados do LocalStorage com fallback seguro.
- */
-function load<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
 
 /**
  * Provedor do Contexto da aplicação.
@@ -63,32 +76,190 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [user, setUser] = useState<Store["user"]>(null);
   const [isAuthed, setAuthed] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [theme, setTheme] = useState<"dark" | "light">(() => 
+    (typeof window !== "undefined" && localStorage.getItem("appfin_theme") as "dark" | "light") || "dark"
+  );
   // 8. FUNCIONALIDADE: Controla se a verificação inicial de sessão do Supabase terminou
   const [initializing, setInitializing] = useState(true);
 
-  // 9. FUNCIONALIDADE: Carrega transações e metas do LocalStorage na inicialização
-  useEffect(() => {
-    setTransactions(load<Transaction[]>(TX_KEY, []));
-    setGoals(load<Goal[]>(GOAL_KEY, []));
-    setHydrated(true);
-  }, []);
+  const activeFetches = useRef<Record<string, Promise<void>>>({});
 
-  // 10. FUNCIONALIDADE: Busca o perfil completo do usuário na tabela profiles do Supabase
-  async function fetchProfile(userId: string, fallbackEmail: string) {
-    const { data } = await supabase
-      .from("profiles")
-      .select("name, email")
-      .eq("id", userId)
-      .single();
-    if (data) {
-      setUser({ name: data.name, email: data.email });
+  // Efeito para alternar classe do tema
+  useEffect(() => {
+    if (theme === "light") {
+      document.documentElement.classList.add("light");
     } else {
-      // Fallback: deriva o nome pelo email caso o perfil ainda não exista
-      const name = fallbackEmail.split("@")[0] ?? "Usuário";
-      setUser({ name: name.charAt(0).toUpperCase() + name.slice(1), email: fallbackEmail });
+      document.documentElement.classList.remove("light");
+    }
+  }, [theme]);
+
+  // 10. FUNCIONALIDADE: Busca o perfil completo e os dados do usuário do banco (transações e metas)
+  async function fetchProfile(authUser: any) {
+    if (!authUser || !authUser.id) {
+      console.warn("fetchProfile chamado com authUser inválido:", authUser);
+      return;
+    }
+    const userId = authUser.id;
+    const fallbackEmail = authUser.email ?? "";
+    const userMetadata = authUser.user_metadata;
+
+    if (activeFetches.current[userId] !== undefined) {
+      return activeFetches.current[userId];
+    }
+
+    const promise = (async () => {
+      // 1. Busca perfil do usuário
+      const { data, error } = await supabase
+          .from("profiles")
+          .select("id, name, email, username, phone, birth_date, monthly_limit, avatar_key, custom_avatar_base64")
+          .eq("id", userId)
+          .single();
+          
+      if (data) {
+        setUser({
+          id: data.id,
+          name: data.name,
+          email: data.email,
+          username: data.username,
+          phone: data.phone,
+          birth_date: data.birth_date,
+          avatar_key: data.avatar_key || undefined,
+          custom_avatar_base64: data.custom_avatar_base64 || undefined,
+          monthly_limit: Number(data.monthly_limit ?? 0)
+        });
+
+        // 2. Busca lançamentos (transactions) do banco
+        const { data: txData } = await supabase
+          .from("transactions")
+          .select("*")
+          .eq("user_id", userId)
+          .order("date", { ascending: false });
+
+        if (txData) {
+          // Mapeia o snake_case do banco para o camelCase/interface do TypeScript
+          const mappedTx: Transaction[] = txData.map(t => ({
+            id: t.id,
+            type: t.type,
+            description: t.description,
+            amount: Number(t.amount),
+            date: t.date,
+            categoryId: t.category_id
+          }));
+          setTransactions(mappedTx);
+        }
+
+        // 3. Busca metas (goals) do banco
+        const { data: goalsData } = await supabase
+          .from("goals")
+          .select("*")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: true });
+
+        if (goalsData) {
+          const mappedGoals: Goal[] = goalsData.map(g => ({
+            id: g.id,
+            name: g.name,
+            target: Number(g.target),
+            current: Number(g.current)
+          }));
+          setGoals(mappedGoals);
+        }
+
+      } else {
+        const isNotFoundError = error?.code === "PGRST116";
+
+        if (isNotFoundError) {
+          // Detecta se é um usuário recém-criado via Google (cadastro inicial)
+          const providers = authUser.identities?.map((id: any) => id.provider) || [];
+          const isGoogle = providers.includes("google");
+          const isRecentlyCreated = (new Date().getTime() - new Date(authUser.created_at).getTime()) < 30000; // 30 segundos
+
+          if (isGoogle && isRecentlyCreated) {
+            // Cria o perfil se for o primeiro login do Google
+            const googleName = userMetadata?.full_name || userMetadata?.name || fallbackEmail.split("@")[0] || "Usuário";
+            const formattedName = googleName.charAt(0).toUpperCase() + googleName.slice(1);
+            const usernameBase = (userMetadata?.email || fallbackEmail).split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "");
+            const finalUsername = `${usernameBase}${Math.floor(1000 + Math.random() * 9000)}`;
+            const tempPhone = `000000000${Math.floor(10 + Math.random() * 90)}`;
+
+            const { error: insertError } = await supabase.rpc("create_user_profile", {
+              user_id:         userId,
+              user_email:      fallbackEmail,
+              user_name:       formattedName,
+              user_username:   finalUsername,
+              user_phone:      tempPhone,
+              user_birth_date: "2000-01-01"
+            });
+
+            if (!insertError) {
+              setUser({
+                id: userId,
+                name: formattedName,
+                email: fallbackEmail,
+                username: finalUsername,
+                phone: tempPhone,
+                birth_date: "2000-01-01",
+                avatar_key: userMetadata?.avatar_key || undefined,
+                custom_avatar_base64: userMetadata?.custom_avatar_base64 || undefined,
+                monthly_limit: 0
+              });
+            } else if (insertError.code === "23505" || insertError.message.includes("already exists")) {
+              // Trata caso a inserção paralela tenha ocorrido primeiro
+              const { data: retryData } = await supabase
+                .from("profiles")
+                .select("id, name, email, username, phone, birth_date, monthly_limit, avatar_key, custom_avatar_base64")
+                .eq("id", userId)
+                .single();
+              if (retryData) {
+                setUser({
+                  id: retryData.id,
+                  name: retryData.name,
+                  email: retryData.email,
+                  username: retryData.username,
+                  phone: retryData.phone,
+                  birth_date: retryData.birth_date,
+                  avatar_key: retryData.avatar_key || undefined,
+                  custom_avatar_base64: retryData.custom_avatar_base64 || undefined,
+                  monthly_limit: Number(retryData.monthly_limit ?? 0)
+                });
+              }
+            } else {
+              console.error("Erro ao criar perfil Google:", insertError);
+              // Fallback minimalista
+              setUser({
+                id: userId,
+                name: formattedName,
+                email: fallbackEmail,
+                username: finalUsername,
+                phone: tempPhone,
+                birth_date: "2000-01-01",
+                avatar_key: userMetadata?.avatar_key || undefined,
+                custom_avatar_base64: userMetadata?.custom_avatar_base64 || undefined,
+                monthly_limit: 0
+              });
+            }
+          } else {
+            // O perfil do usuário foi deletado no banco de dados. Desloga imediatamente.
+            await supabase.auth.signOut();
+            setUser(null);
+            setTransactions([]);
+            setGoals([]);
+            setAuthed(false);
+          }
+        } else {
+          console.error("Erro ao buscar perfil:", error);
+        }
+      }
+      setLoading(false);
+    })();
+
+    activeFetches.current[userId] = promise;
+    try {
+      await promise;
+    } finally {
+      delete activeFetches.current[userId];
     }
   }
 
@@ -97,7 +268,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Verifica a sessão ativa ao carregar o app
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
-        fetchProfile(session.user.id, session.user.email ?? "");
+        fetchProfile(session.user);
         setAuthed(true);
       }
       // Marca que a verificação inicial terminou — _app.tsx pode redirecionar agora
@@ -107,11 +278,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Listener reativo: dispara no login, logout e expiração de token
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
-        fetchProfile(session.user.id, session.user.email ?? "");
+        fetchProfile(session.user);
         setAuthed(true);
       } else {
         // Limpa o estado quando o usuário faz logout ou a sessão expira
         setUser(null);
+        setTransactions([]);
+        setGoals([]);
         setAuthed(false);
       }
     });
@@ -119,46 +292,103 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Salva transações no LocalStorage toda vez que forem alteradas
-  useEffect(() => {
-    if (hydrated) localStorage.setItem(TX_KEY, JSON.stringify(transactions));
-  }, [transactions, hydrated]);
-
-  // Salva metas no LocalStorage toda vez que forem alteradas
-  useEffect(() => {
-    if (hydrated) localStorage.setItem(GOAL_KEY, JSON.stringify(goals));
-  }, [goals, hydrated]);
-
   const value: Store = useMemo(
     () => ({
       transactions,
       goals,
       user,
       isAuthed,
+      theme,
+      toggleTheme: () => {
+        const next = theme === "dark" ? "light" : "dark";
+        setTheme(next);
+        localStorage.setItem("appfin_theme", next);
+      },
       initializing,
       loading,
       authError,
-      // Adiciona nova transação com UUID único
-      addTx: (t) => setTransactions((arr) => [{ ...t, id: crypto.randomUUID() }, ...arr]),
-      // Atualiza transação pelo id
-      updateTx: (t) => setTransactions((arr) => arr.map((x) => (x.id === t.id ? t : x))),
-      // Remove transação pelo id
-      deleteTx: (id) => setTransactions((arr) => arr.filter((x) => x.id !== id)),
-      // Adiciona nova meta com UUID único
-      addGoal: (g) => setGoals((arr) => [...arr, { ...g, id: crypto.randomUUID() }]),
+      
+      // Adiciona nova transação com UUID único (salva no estado e no banco assincronamente)
+      addTx: (t) => {
+        if (!user) return;
+        const newId = safeUUID();
+        const newTx = { ...t, id: newId };
+        
+        // Atualização otimista no UI
+        setTransactions((arr) => [newTx, ...arr]);
+        
+        // Sincroniza com Supabase
+        supabase.from('transactions').insert([{
+          id: newId,
+          user_id: user.id,
+          type: newTx.type,
+          description: newTx.description,
+          amount: newTx.amount,
+          date: newTx.date,
+          category_id: newTx.categoryId
+        }]).then(({ error }) => {
+          if (error) {
+            console.error("Erro ao salvar lançamento no banco:", error);
+            alert("Erro ao salvar na nuvem: " + error.message + "\n\nVocê rodou o código SQL no painel do Supabase?");
+          }
+        });
+      },
+      
+      // Atualiza transação pelo id (estado e banco)
+      updateTx: (t) => {
+        setTransactions((arr) => arr.map((x) => (x.id === t.id ? t : x)));
+        
+        supabase.from('transactions').update({
+          type: t.type,
+          description: t.description,
+          amount: t.amount,
+          date: t.date,
+          category_id: t.categoryId
+        }).eq('id', t.id).then(({ error }) => {
+          if (error) console.error("Erro ao atualizar lançamento no banco:", error);
+        });
+      },
+      
+      // Remove transação pelo id (estado e banco)
+      deleteTx: (id) => {
+        setTransactions((arr) => arr.filter((x) => x.id !== id));
+        
+        supabase.from('transactions').delete().eq('id', id).then(({ error }) => {
+          if (error) console.error("Erro ao excluir lançamento no banco:", error);
+        });
+      },
+      
+      // Adiciona nova meta com UUID único (estado e banco)
+      addGoal: (g) => {
+        if (!user) return;
+        const newId = safeUUID();
+        const newGoal = { ...g, id: newId };
+        
+        setGoals((arr) => [...arr, newGoal]);
+        
+        supabase.from('goals').insert([{
+          id: newId,
+          user_id: user.id,
+          name: newGoal.name,
+          target: newGoal.target,
+          current: newGoal.current
+        }]).then(({ error }) => {
+          if (error) console.error("Erro ao salvar meta no banco:", error);
+        });
+      },
 
-      // 12. FUNCIONALIDADE: Login via CPF, nome de usuário OU e-mail
+      // 12. FUNCIONALIDADE: Login via Celular, nome de usuário OU e-mail
       // Busca o e-mail associado no banco (por qualquer identificador) e autentica
       login: async (identifier, password) => {
         setLoading(true);
         setAuthError(null);
 
-        // Busca o e-mail pelo CPF, username ou e-mail via função SQL security definer
+        // Busca o e-mail pelo celular, username ou e-mail via função SQL security definer
         const { data: foundEmail, error: rpcError } = await supabase
           .rpc("get_email_by_identifier", { identifier: identifier.trim() });
 
         if (rpcError || !foundEmail) {
-          setAuthError("CPF, nome de usuário ou e-mail não encontrado.");
+          setAuthError("Celular, nome de usuário ou e-mail não encontrado.");
           setLoading(false);
           return;
         }
@@ -182,20 +412,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
 
       // 13. FUNCIONALIDADE: Cadastro real com pré-validação de unicidade
-      // Verifica CPF, username e e-mail ANTES de criar a conta, evitando usuário
+      // Verifica Celular, username e e-mail ANTES de criar a conta, evitando usuário
       // órfão no Supabase Auth em caso de conflito no perfil.
       signUp: async (email, password, profile) => {
         setLoading(true);
         setAuthError(null);
 
-        // 13a. PRÉ-CHECAGEM: verifica conflitos de CPF, username e email no banco
+        // 13a. PRÉ-CHECAGEM: verifica conflitos de celular, username e email no banco
         // antes de chamar o Supabase Auth, para mostrar aviso claro ao usuário
         const { data: conflict, error: conflictError } = await supabase.rpc(
           "check_signup_conflicts",
           {
             check_email:    email.toLowerCase().trim(),
             check_username: profile.username,
-            check_cpf:      profile.cpf,
+            check_phone:    profile.phone,
           }
         );
 
@@ -216,14 +446,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setLoading(false);
           return;
         }
-        if (conflict === "cpf") {
-          setAuthError("⚠️ Este CPF já está cadastrado.");
+        if (conflict === "phone") {
+          setAuthError("⚠️ Este celular já está cadastrado.");
           setLoading(false);
           return;
         }
 
         // 13b. Cria a conta de autenticação no Supabase Auth
-        const { data, error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { has_password: true }
+          }
+        });
 
         if (error) {
           // Trata o erro de limite de e-mails do plano gratuito do Supabase
@@ -246,14 +482,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             user_email:      email,
             user_name:       profile.name,
             user_username:   profile.username,
-            user_cpf:        profile.cpf,
+            user_phone:      profile.phone,
             user_birth_date: profile.birthDate,
           });
 
           if (profileError) {
             // Fallback: traduz erros de constraint único do Postgres
-            if (profileError.message.includes("profiles_cpf_key")) {
-              setAuthError("⚠️ Este CPF já está cadastrado.");
+            if (profileError.message.includes("profiles_phone_key") || profileError.message.includes("profiles_cpf_key")) {
+              setAuthError("⚠️ Este celular já está cadastrado.");
             } else if (profileError.message.includes("profiles_username_key")) {
               setAuthError("⚠️ Este nome de usuário já está em uso.");
             } else {
@@ -283,8 +519,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         await supabase.auth.signOut();
         setLoading(false);
       },
+
+      loginWithGoogle: async () => {
+        setLoading(true);
+        setAuthError(null);
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo: window.location.origin,
+          },
+        });
+        if (error) {
+          setAuthError(error.message);
+        }
+        setLoading(false);
+      },
+
+      reloadProfile: async () => {
+        const { data: { user: freshUser } } = await supabase.auth.getUser();
+        if (freshUser) {
+          await fetchProfile(freshUser);
+        }
+      },
+
+      updateUserLocal: (updates) => {
+        setUser((prev) => prev ? { ...prev, ...updates } : null);
+      },
     }),
-    [transactions, goals, user, isAuthed, initializing, loading, authError],
+    [transactions, goals, user, isAuthed, theme, initializing, loading, authError],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -1,0 +1,17 @@
+{
+  "name": "GranaNaMao",
+  "short_name": "GranaNaMao",
+  "description": "Controle seu dinheiro com inteligência.",
+  "start_url": "/?mode=standalone",
+  "display": "standalone",
+  "background_color": "#091A25",
+  "theme_color": "#091A25",
+  "icons": [
+    {
+      "src": "/img/pwalogo.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

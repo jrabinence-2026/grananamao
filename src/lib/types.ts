@@ -40,7 +40,7 @@ export const EXPENSE_CATEGORIES: Category[] = [
 // 1. FUNCIONALIDADE: Lista estática de categorias padrão para Receitas (Entradas)
 export const INCOME_CATEGORIES: Category[] = [
   { id: "vale_alimentacao", label: "Vale alimentação", color: "#FF8A4C", icon: "ShoppingBag" },
-  { id: "salario", label: "Salários", color: "#4CAF50", icon: "Wallet" },
+  { id: "salario", label: "Salário", color: "#4CAF50", icon: "Wallet" },
   { id: "extra", label: "Extra", color: "#56C271", icon: "Coins" },
   { id: "bets", label: "Bets", color: "#FF5404", icon: "Dices" },
   { id: "freelancer", label: "Freelancer", color: "#7BB4E8", icon: "Laptop" },

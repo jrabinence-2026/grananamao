@@ -73,6 +73,38 @@
   --ring: var(--orange);
 }
 
+.light {
+  /* Brand for Light Mode */
+  --navy: #F7F9FC; /* Cinza bem clarinho (background) */
+  --navy-elevated: #FFFFFF; /* Branco puro para os cards */
+  --cream: #1E293B; /* Texto escuro slate */
+  --cream-muted: #64748B; /* Texto secundário cinza */
+  --orange: #FF5404;
+  --income: #4CAF50;
+  --expense: #FF5404;
+
+  /* Semantic mapping for Light Mode */
+  --background: var(--navy);
+  --foreground: var(--cream);
+  --card: var(--navy-elevated);
+  --card-foreground: var(--cream);
+  --popover: var(--navy-elevated);
+  --popover-foreground: var(--cream);
+  --primary: var(--orange);
+  --primary-foreground: #ffffff;
+  --secondary: var(--navy-elevated);
+  --secondary-foreground: var(--cream);
+  --muted: var(--navy-elevated);
+  --muted-foreground: var(--cream-muted);
+  --accent: var(--orange);
+  --accent-foreground: #ffffff;
+  --destructive: var(--orange);
+  --destructive-foreground: #ffffff;
+  --border: #E2E8F0; /* Borda cinza clara */
+  --input: #94A3B8; /* Placeholder e inputs cinzas */
+  --ring: var(--orange);
+}
+
 @layer base {
   * {
     border-color: var(--color-border);

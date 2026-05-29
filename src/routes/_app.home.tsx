@@ -7,6 +7,7 @@ import { ChartsPage as ChartsView } from "@/pages/ChartsPage";
 import { GoalsPage as GoalsView } from "@/pages/GoalsPage";
 import { ProfilePage as ProfileView } from "@/pages/ProfilePage";
 import { BottomNav } from "@/components/BottomNav";
+import { useStore } from "@/lib/store";
 
 // Schema de validação dos parâmetros de busca
 const homeSearchSchema = z.object({
@@ -25,10 +26,14 @@ export const Route = createFileRoute("/_app/home")({
  * enquanto as páginas reais continuam separadas em arquivos modulares na pasta `src/pages/`.
  */
 function DashboardWrapper() {
+  const { user } = useStore();
   // 1. FUNCIONALIDADE: Obtém a aba ativa diretamente do parâmetro de busca da URL
   const { tab } = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
-  const activeTab = tab || "home";
+  
+  // Se o usuário tem o telefone temporário do Google, força a aba "profile"
+  const isNewGoogleUser = user && user.phone && user.phone.startsWith("000000000");
+  const activeTab = isNewGoogleUser ? "profile" : (tab || "home");
 
   // 2. FUNCIONALIDADE: Atualiza o parâmetro de busca da URL ao trocar de aba
   const setActiveTab = (newTab: "home" | "transactions" | "charts" | "goals" | "profile") => {
