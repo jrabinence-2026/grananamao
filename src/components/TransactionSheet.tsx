@@ -3,6 +3,7 @@ import {
   CATEGORIES, 
   INCOME_CATEGORIES, 
   EXPENSE_CATEGORIES, 
+  INVESTMENT_CATEGORIES,
   type Transaction, 
   type TxType 
 } from "@/lib/types"; // Importação das novas listas específicas de categorias
@@ -58,11 +59,13 @@ export function TransactionSheet({ open, onClose, editing }: Props) {
     setIsDeleting(false);
   }, [editing, open]);
 
-  // 1. FUNCIONALIDADE: Ajusta a categoria padrão ao alternar o tipo da transação (Receita ou Despesa)
+  // 1. FUNCIONALIDADE: Ajusta a categoria padrão ao alternar o tipo da transação (Receita, Despesa ou Investimento)
   const handleTypeChange = (newType: TxType) => {
     setType(newType);
     if (newType === "income") {
       setCategoryId("salario"); // "Salários" é o padrão para receitas
+    } else if (newType === "investment") {
+      setCategoryId("investimento_geral"); // "Investimento" é o padrão para investimentos
     } else {
       setCategoryId("alimentacao"); // "Alimentação" é o padrão para despesas
     }
@@ -94,9 +97,9 @@ export function TransactionSheet({ open, onClose, editing }: Props) {
     // Se a descrição estiver vazia, usa o nome da categoria selecionada
     let finalDesc = description.trim();
     if (!finalDesc) {
-      const allCats = [...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES];
+      const allCats = [...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES, ...INVESTMENT_CATEGORIES];
       const selectedCat = allCats.find(c => c.id === categoryId);
-      finalDesc = selectedCat ? selectedCat.label : (type === "income" ? "Receita" : "Despesa");
+      finalDesc = selectedCat ? selectedCat.label : (type === "income" ? "Receita" : type === "investment" ? "Investimento" : "Despesa");
     }
 
     const payload = { type, description: finalDesc, amount: value, date, categoryId };
@@ -139,18 +142,24 @@ export function TransactionSheet({ open, onClose, editing }: Props) {
           </div>
         )}
 
-        {/* Alternador de Tipo: Despesa ou Receita */}
-        <div className="grid grid-cols-2 p-1 rounded-full bg-navy mb-5 border border-cream/10">
-          {(["income", "expense"] as TxType[]).map((t) => (
+        {/* Alternador de Tipo: Despesa, Receita ou Investimento */}
+        <div className="grid grid-cols-3 p-1 rounded-full bg-navy mb-5 border border-cream/10">
+          {(["income", "expense", "investment"] as TxType[]).map((t) => (
             <button
               key={t}
               onClick={() => handleTypeChange(t)}
               className={
-                "py-2.5 rounded-full text-sm font-semibold transition-colors " +
-                (type === t ? "bg-orange text-white" : "text-cream-muted")
+                "py-2.5 rounded-full text-xs font-semibold transition-colors " +
+                (type === t 
+                  ? t === "income" 
+                    ? "bg-[#4CAF50] text-white" 
+                    : t === "investment"
+                      ? "bg-blue-500 text-white"
+                      : "bg-orange text-white"
+                  : "text-cream-muted")
               }
             >
-              {t === "income" ? "Receita" : "Despesa"}
+              {t === "income" ? "Receita" : t === "investment" ? "Investimento" : "Despesa"}
             </button>
           ))}
         </div>
@@ -188,10 +197,15 @@ export function TransactionSheet({ open, onClose, editing }: Props) {
           />
         </div>
 
-        {/* 3. FUNCIONALIDADE: Seleção dinâmica de Categorias baseada no Tipo (Receita / Despesa) */}
+        {/* 3. FUNCIONALIDADE: Seleção dinâmica de Categorias baseada no Tipo (Receita / Despesa / Investimento) */}
         <label className="block text-xs text-cream-muted mb-2">Categoria</label>
         <div className="grid grid-cols-4 gap-2 mb-6">
-          {(type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map((c) => {
+          {(type === "income" 
+            ? INCOME_CATEGORIES 
+            : type === "investment"
+              ? INVESTMENT_CATEGORIES
+              : EXPENSE_CATEGORIES
+          ).map((c) => {
             const Icon = Icons[c.icon] ?? Icons.Circle;
             const active = c.id === categoryId;
             return (
@@ -201,7 +215,11 @@ export function TransactionSheet({ open, onClose, editing }: Props) {
                 className={
                   "flex flex-col items-center gap-1.5 py-3 rounded-xl border transition-colors " +
                   (active
-                    ? "border-orange bg-orange/10"
+                    ? type === "income"
+                      ? "border-[#4CAF50] bg-[#4CAF50]/10"
+                      : type === "investment"
+                        ? "border-blue-500 bg-blue-500/10"
+                        : "border-orange bg-orange/10"
                     : "border-cream/15 bg-navy")
                 }
               >

@@ -14,8 +14,8 @@ export function ChartsPage() {
   // Controle de deslocamento de meses em relação ao mês atual
   const [offset, setOffset] = useState(0);
   
-  // Tipo de visualização: Entradas ou Saídas
-  const [type, setType] = useState<"income" | "expense">("expense");
+  // Tipo de visualização: Entradas, Saídas ou Investimentos
+  const [type, setType] = useState<"income" | "expense" | "investment">("expense");
 
   // Calcula a data de referência baseada no offset de meses
   const ref = useMemo(() => {
@@ -31,6 +31,29 @@ export function ChartsPage() {
     return d.getMonth() === ref.getMonth() && d.getFullYear() === ref.getFullYear() && t.type === type;
   });
 
+  // Cálculo de receitas, despesas e investimentos específicos para o mês de referência (independente do toggle ativo)
+  const monthIncome = transactions.filter((t) => {
+    const d = new Date(t.date + "T12:00:00");
+    return d.getMonth() === ref.getMonth() && d.getFullYear() === ref.getFullYear() && t.type === "income";
+  }).reduce((s, t) => s + t.amount, 0);
+
+  const monthExpense = transactions.filter((t) => {
+    const d = new Date(t.date + "T12:00:00");
+    return d.getMonth() === ref.getMonth() && d.getFullYear() === ref.getFullYear() && t.type === "expense";
+  }).reduce((s, t) => s + t.amount, 0);
+
+  const monthInvestment = transactions.filter((t) => {
+    const d = new Date(t.date + "T12:00:00");
+    return d.getMonth() === ref.getMonth() && d.getFullYear() === ref.getFullYear() && t.type === "investment";
+  }).reduce((s, t) => s + t.amount, 0);
+
+  const monthBalance = monthIncome - monthExpense - monthInvestment;
+  const maxTypeVal = Math.max(1, monthIncome, monthExpense, monthInvestment);
+
+  // Volume total movimentado no mês (soma de receitas, despesas e investimentos)
+  const totalVolume = monthIncome + monthExpense + monthInvestment;
+  const daysInMonth = new Date(ref.getFullYear(), ref.getMonth() + 1, 0).getDate();
+
   // Cálculo de crescimento de entradas (para o insight)
   const prevRef = new Date(ref);
   prevRef.setMonth(prevRef.getMonth() - 1);
@@ -39,13 +62,13 @@ export function ChartsPage() {
     return d.getMonth() === prevRef.getMonth() && d.getFullYear() === prevRef.getFullYear() && t.type === "income";
   }).reduce((s, t) => s + t.amount, 0);
 
-  const currentIncome = type === "income" ? monthTx.reduce((s, t) => s + t.amount, 0) : 0;
+  const currentIncome = monthIncome;
   
   let growthPct = 0;
   if (prevIncome > 0) {
     growthPct = Math.round(((currentIncome - prevIncome) / prevIncome) * 100);
   } else if (currentIncome > 0) {
-    growthPct = 100; // Crescimento infinito se não havia entradas no mês anterior
+    growthPct = 100;
   }
 
   // Agrupa as transações mensais por categorias e ordena pelas de maior valor acumulado
@@ -78,11 +101,11 @@ export function ChartsPage() {
         <div className="px-4 pt-12 pb-3 flex justify-between items-center">
           <h1 className="text-xl font-bold text-cream">Relatórios</h1>
           
-          {/* Toggle Entradas/Saídas no topo */}
-          <div className="flex bg-navy-elevated rounded-full p-1 border border-cream/10">
+          {/* Toggle Entradas/Saídas/Investimentos no topo */}
+          <div className="flex bg-navy-elevated rounded-full p-1 border border-cream/10 shrink-0">
             <button
               onClick={() => setType("income")}
-              className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+              className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors ${
                 type === "income" ? "bg-[#4CAF50] text-white" : "text-cream-muted"
               }`}
             >
@@ -90,11 +113,19 @@ export function ChartsPage() {
             </button>
             <button
               onClick={() => setType("expense")}
-              className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+              className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors ${
                 type === "expense" ? "bg-orange text-white" : "text-cream-muted"
               }`}
             >
               Despesas
+            </button>
+            <button
+              onClick={() => setType("investment")}
+              className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors ${
+                type === "investment" ? "bg-blue-500 text-white" : "text-cream-muted"
+              }`}
+            >
+              Investimentos
             </button>
           </div>
         </div>
@@ -149,6 +180,92 @@ export function ChartsPage() {
           <TrendingUp size={44} className="absolute right-3.5 bottom-1 text-cream-muted/10 pointer-events-none" />
         </div>
 
+        {/* Card do Resumo Comparativo Geral */}
+        <div className="rounded-2xl bg-navy-elevated p-5 border border-cream/5 space-y-4">
+          <div className="flex justify-between items-end">
+            <div>
+              <p className="text-[10px] text-cream-muted font-medium mb-0.5">
+                Balanço Geral
+              </p>
+              <h3 className="text-sm font-bold text-cream-muted">
+                Saldo restante: <span className={monthBalance >= 0 ? "text-[#4CAF50]" : "text-orange"}>{fmtBRL(monthBalance)}</span>
+              </h3>
+            </div>
+          </div>
+
+          {/* Barra Comparativa Geral de Proporção (Única linha de progresso segmentada) */}
+          <div className="space-y-2 pt-1">
+            <div className="h-3.5 w-full bg-navy rounded-full overflow-hidden flex border border-cream/5 shadow-inner">
+              {totalVolume === 0 ? (
+                <div className="h-full w-full bg-cream/10 flex items-center justify-center text-[9px] text-cream-muted">
+                  Sem dados registrados
+                </div>
+              ) : (
+                <>
+                  {monthIncome > 0 && (
+                    <div 
+                      className="h-full bg-[#4CAF50] transition-all duration-500" 
+                      style={{ width: `${(monthIncome / totalVolume) * 100}%` }}
+                    />
+                  )}
+                  {monthExpense > 0 && (
+                    <div 
+                      className="h-full bg-orange transition-all duration-500" 
+                      style={{ width: `${(monthExpense / totalVolume) * 100}%` }}
+                    />
+                  )}
+                  {monthInvestment > 0 && (
+                    <div 
+                      className="h-full bg-blue-500 transition-all duration-500" 
+                      style={{ width: `${(monthInvestment / totalVolume) * 100}%` }}
+                    />
+                  )}
+                </>
+              )}
+            </div>
+            
+            {/* Legenda com Porcentagens e Valores */}
+            <div className="grid grid-cols-3 gap-2 pt-1.5">
+              <div className="bg-navy/35 rounded-lg p-2 border border-cream/5 text-center">
+                <div className="flex items-center justify-center gap-1.5 mb-0.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#4CAF50]" />
+                  <span className="text-[10px] text-cream-muted font-medium">Receitas</span>
+                </div>
+                <span className="text-xs font-bold text-[#4CAF50] block">
+                  {totalVolume > 0 ? Math.round((monthIncome / totalVolume) * 100) : 0}%
+                </span>
+                <span className="text-[9px] text-cream-muted block mt-0.5">
+                  {fmtBRL(monthIncome)}
+                </span>
+              </div>
+              <div className="bg-navy/35 rounded-lg p-2 border border-cream/5 text-center">
+                <div className="flex items-center justify-center gap-1.5 mb-0.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-orange" />
+                  <span className="text-[10px] text-cream-muted font-medium">Despesas</span>
+                </div>
+                <span className="text-xs font-bold text-orange block">
+                  {totalVolume > 0 ? Math.round((monthExpense / totalVolume) * 100) : 0}%
+                </span>
+                <span className="text-[9px] text-cream-muted block mt-0.5">
+                  {fmtBRL(monthExpense)}
+                </span>
+              </div>
+              <div className="bg-navy/35 rounded-lg p-2 border border-cream/5 text-center">
+                <div className="flex items-center justify-center gap-1.5 mb-0.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                  <span className="text-[10px] text-cream-muted font-medium">Investido</span>
+                </div>
+                <span className="text-xs font-bold text-blue-500 block">
+                  {totalVolume > 0 ? Math.round((monthInvestment / totalVolume) * 100) : 0}%
+                </span>
+                <span className="text-[9px] text-cream-muted block mt-0.5">
+                  {fmtBRL(monthInvestment)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Gráfico de Donut / Distribuição percentual — Movido para CIMa do gráfico de barras */}
         <div className="rounded-2xl bg-navy-elevated p-4 border border-cream/5">
           <p className="text-xs text-cream-muted mb-3">Distribuição</p>
@@ -172,7 +289,9 @@ export function ChartsPage() {
 
         {/* Gráfico de barras simples para total acumulado por categorias */}
         <div className="rounded-2xl bg-navy-elevated p-4 border border-cream/5">
-          <p className="text-xs text-cream-muted mb-3">{type === "income" ? "Receitas por categoria" : "Despesas por categoria"}</p>
+          <p className="text-xs text-cream-muted mb-3">
+            {type === "income" ? "Receitas por categoria" : type === "investment" ? "Investimentos por categoria" : "Despesas por categoria"}
+          </p>
           {byCat.length === 0 ? (
             <p className="text-center text-cream-muted py-8 text-sm">Sem dados neste mês.</p>
           ) : (
@@ -189,7 +308,7 @@ export function ChartsPage() {
                       className="h-full rounded-full"
                       style={{ 
                         width: `${(x.total / max) * 100}%`,
-                        backgroundColor: type === "income" ? "#4CAF50" : "#FF5404"
+                        backgroundColor: type === "income" ? "#4CAF50" : type === "investment" ? "#3B82F6" : "#FF5404"
                       }}
                     />
                   </div>
@@ -202,10 +321,17 @@ export function ChartsPage() {
         {/* Indicador de maior item individual do mês */}
         {biggest && (
           <div className="rounded-2xl bg-navy-elevated p-4 border border-cream/5">
-            <p className="text-xs text-cream-muted">{type === "income" ? "Maior receita do mês" : "Maior gasto do mês"}</p>
+            <p className="text-xs text-cream-muted">
+              {type === "income" ? "Maior receita do mês" : type === "investment" ? "Maior investimento do mês" : "Maior gasto do mês"}
+            </p>
             <div className="mt-2 flex items-center justify-between">
               <span className="text-cream font-bold">{biggest.cat.label}</span>
-              <span className="font-bold" style={{ color: type === "income" ? "#4CAF50" : "#FF5404" }}>{fmtBRL(biggest.total)}</span>
+              <span 
+                className="font-bold" 
+                style={{ color: type === "income" ? "#4CAF50" : type === "investment" ? "#3B82F6" : "#FF5404" }}
+              >
+                {fmtBRL(biggest.total)}
+              </span>
             </div>
           </div>
         )}

@@ -17,10 +17,24 @@ import {
   EyeOff,
   Camera,
   HelpCircle,
-  Sun
+  Sun,
+  Shield,
+  Download
 } from "lucide-react";
 import { useStore, fmtBRL } from "@/lib/store";
 import { supabase } from "@/lib/supabase";
+import { NotificationSheet } from "@/components/NotificationSheet";
+import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
+
+// Helper para detectar se está rodando no modo Standalone
+const isStandalone = () => {
+  if (typeof window === "undefined") return false;
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    (window.navigator as any).standalone === true ||
+    window.location.search.includes("mode=standalone")
+  );
+};
 
 // 1. FUNCIONALIDADE: Definição dos avatares padrões da plataforma (Dicebear Adventurer e Croodles)
 const DEFAULT_AVATARS = [
@@ -41,6 +55,8 @@ const DEFAULT_AVATARS = [
 ];
 
 
+import { AdminPanel } from "@/components/AdminPanel";
+
 /**
  * Componente ProfilePage (Perfil do Usuário).
  * Apresenta a interface de configurações pessoais seguindo o modelo visual da imagem:
@@ -50,11 +66,13 @@ const DEFAULT_AVATARS = [
  * - Botão de sair da conta.
  */
 export function ProfilePage() {
-  const { user, logout, reloadProfile, updateUserLocal, theme, toggleTheme } = useStore();
+  const { user, logout, reloadProfile, updateUserLocal, theme, toggleTheme, updateMonthlyLimit } = useStore();
   const navigate = useNavigate();
 
   // Estados para edição de dados pessoais
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [isDataModalOpen, setIsDataModalOpen] = useState(false);
+  const [showPwaInstallTutorial, setShowPwaInstallTutorial] = useState(false);
   const [editFirstName, setEditFirstName] = useState("");
   const [editLastName, setEditLastName] = useState("");
   const [editUsername, setEditUsername] = useState(user?.username ?? "");
@@ -202,7 +220,7 @@ export function ProfilePage() {
     setCpfStatus("checking");
     const timer = setTimeout(async () => {
       const { data: available } = await supabase
-        .rpc("is_phone_available", { check_phone: editCpf });
+        .rpc("is_phone_available", { check_phone: cleanCpf });
       setCpfStatus(available ? "available" : "taken");
     }, 600);
     return () => clearTimeout(timer);
@@ -303,6 +321,9 @@ export function ProfilePage() {
           .from("profiles")
           .update({ monthly_limit: num })
           .eq("id", user.id);
+        const now = new Date();
+        const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        await updateMonthlyLimit(currentMonthStr, num);
         await reloadProfile();
       }
     }
@@ -310,17 +331,88 @@ export function ProfilePage() {
   };
 
   // 3. FUNCIONALIDADE: Toggle de Notificações (carrega/salva do LocalStorage)
-  const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(() => {
-    const saved = localStorage.getItem("fintrack.profile.notifications");
-    return saved !== "false"; // Padrão ativo
-  });
+  const notificationsEnabled = true;
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
 
-  const toggleNotifications = () => {
-    // Alterna o status das notificações (ATIVO / INATIVO)
-    const nextVal = !notificationsEnabled;
-    setNotificationsEnabled(nextVal);
-    localStorage.setItem("fintrack.profile.notifications", String(nextVal));
+  const checkUnreadNotifications = async () => {
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("id")
+      .eq("is_active", true);
+
+    if (!error && data) {
+      let seenList: string[] = [];
+      try {
+        const stored = localStorage.getItem("fintrack_seen_notifications");
+        seenList = stored ? JSON.parse(stored) : [];
+      } catch {}
+      // Badge shows if there are active notifications not yet seen by this user
+      const unread = data.some((n) => !seenList.includes(n.id));
+      setHasUnreadNotifications(unread);
+    }
   };
+
+  useEffect(() => {
+    checkUnreadNotifications();
+
+    // Helper: remove uma notificação das listas de visto/limpo para ela reaparecer
+    const resurrectNotification = (id: string) => {
+      try {
+        const seenRaw = localStorage.getItem("fintrack_seen_notifications");
+        const seen: string[] = seenRaw ? JSON.parse(seenRaw) : [];
+        localStorage.setItem("fintrack_seen_notifications", JSON.stringify(seen.filter((s) => s !== id)));
+
+        const clearedRaw = localStorage.getItem("fintrack_cleared_notifications");
+        const cleared: string[] = clearedRaw ? JSON.parse(clearedRaw) : [];
+        localStorage.setItem("fintrack_cleared_notifications", JSON.stringify(cleared.filter((c) => c !== id)));
+      } catch {}
+    };
+
+    // Escuta em tempo real INSERT e UPDATE na tabela notifications
+    const channel = supabase
+      .channel("notif-profile-listener")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "notifications" },
+        (payload) => {
+          setHasUnreadNotifications(true);
+          if ("Notification" in window && Notification.permission === "granted") {
+            new Notification("GranaNaMão — Novo Aviso", {
+              body: (payload.new as any)?.message ?? "Você tem um novo aviso.",
+              icon: "/img/pwalogo.png",
+            });
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "notifications" },
+        (payload) => {
+          const updated = payload.new as any;
+          if (!updated?.is_active) return; // ignora se foi desativado
+
+          // Remove das listas locais para reaparecer no painel
+          resurrectNotification(updated.id);
+
+          // Reacende o badge
+          setHasUnreadNotifications(true);
+
+          // Notificação push
+          if ("Notification" in window && Notification.permission === "granted") {
+            new Notification("GranaNaMão — Aviso Atualizado", {
+              body: updated.message ?? "Um aviso foi atualizado.",
+              icon: "/img/pwalogo.png",
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   // 5. FUNCIONALIDADE: Alternador de Moedas (Fixado em BRL e alerta de indisponibilidade)
   const [currency] = useState("BRL (R$)");
@@ -644,6 +736,18 @@ export function ProfilePage() {
       setTimeout(() => {
         setSuccessMsg("");
         setIsDataModalOpen(false);
+        
+        // Se for um novo usuário (Welcome) e ainda não tiver senha, força a criação
+        if (isWelcome && !hasPassword) {
+          setPwdError("");
+          setPwdSuccess("");
+          setNewPassword("");
+          setConfirmPassword("");
+          setCurrentPassword("");
+          setPwdStep(1);
+          setIsPasswordModalOpen(true);
+        }
+        
         setIsWelcome(false);
       }, 2000);
     }
@@ -659,12 +763,12 @@ export function ProfilePage() {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={toggleNotifications}
+            onClick={() => setIsNotificationOpen(true)}
             className="h-10 w-10 rounded-full bg-navy-elevated flex items-center justify-center border border-cream/10 relative transition-transform active:scale-95"
           >
             <Bell size={18} className="text-cream" />
-            {notificationsEnabled && (
-              <span className="absolute mt-[-10px] ml-3 h-2 w-2 rounded-full bg-orange" />
+            {hasUnreadNotifications && (
+              <span className="absolute mt-[-10px] ml-3 h-2 w-2 rounded-full bg-orange animate-pulse" />
             )}
           </button>
           {renderAvatar("sm")}
@@ -705,21 +809,15 @@ export function ProfilePage() {
           </button>
 
           {/* Opção: Notificações */}
-          <button
-            onClick={toggleNotifications}
-            className="w-full flex items-center justify-between px-4 py-4 text-left transition-colors hover:bg-cream/5 active:bg-cream/5"
-          >
+          <div className="w-full flex items-center justify-between px-4 py-4 select-none opacity-85">
             <div className="flex items-center gap-3">
               <Bell size={18} className="text-cream-muted" />
               <span className="text-sm font-medium text-cream">Notificações</span>
             </div>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${notificationsEnabled
-                ? "bg-[#4CAF50]/15 text-[#4CAF50]"
-                : "bg-cream-muted/10 text-cream-muted"
-              }`}>
-              {notificationsEnabled ? "ATIVO" : "INATIVO"}
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#4CAF50]/15 text-[#4CAF50]">
+              ATIVO
             </span>
-          </button>
+          </div>
 
           {/* Opção: Tema */}
           <button
@@ -783,6 +881,20 @@ export function ProfilePage() {
             <ChevronRight size={16} className="text-cream-muted" />
           </button>
 
+          {/* Opção: Painel Admin */}
+          {user?.is_admin && (
+            <button
+              onClick={() => setIsAdminModalOpen(true)}
+              className="w-full flex items-center justify-between px-4 py-4 text-left transition-colors hover:bg-cream/5 active:bg-cream/5"
+            >
+              <div className="flex items-center gap-3">
+                <Shield size={18} className="text-orange" />
+                <span className="text-sm font-bold text-orange">Painel Administrativo</span>
+              </div>
+              <ChevronRight size={16} className="text-orange" />
+            </button>
+          )}
+
           {/* Opção: Suporte / Ajuda */}
           <a
             href="https://wa.me/5598984026886?text=preciso%20de%20ajuda%20com%20o%20app"
@@ -799,6 +911,22 @@ export function ProfilePage() {
             </span>
           </a>
 
+          {/* Opção: Instalar Aplicativo (PWA) */}
+          {!isStandalone() && (
+            <button
+              onClick={() => setShowPwaInstallTutorial(true)}
+              className="w-full flex items-center justify-between px-4 py-4 text-left transition-colors hover:bg-cream/5 active:bg-cream/5 border-t border-cream/5"
+            >
+              <div className="flex items-center gap-3">
+                <Download size={18} className="text-[#4FC3F7]" />
+                <span className="text-sm font-medium text-cream">Instalar Aplicativo (PWA)</span>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#4FC3F7]/15 text-[#4FC3F7] animate-pulse">
+                BAIXAR
+              </span>
+            </button>
+          )}
+
         </div>
 
         {/* 10. FUNCIONALIDADE: Botão de Sair da conta (aguarda logout assíncrono do Supabase) */}
@@ -810,6 +938,21 @@ export function ProfilePage() {
         </button>
 
       </div>
+      {/* Notification Sheet */}
+      <NotificationSheet
+        open={isNotificationOpen}
+        onClose={() => setIsNotificationOpen(false)}
+        onNotificationsUpdated={checkUnreadNotifications}
+      />
+
+      {/* Prompt de Instalação PWA */}
+      {showPwaInstallTutorial && (
+        <PWAInstallPrompt
+          forceOpen={true}
+          onCloseForceOpen={() => setShowPwaInstallTutorial(false)}
+        />
+      )}
+
       {/* 12. FUNCIONALIDADE: Modal para editar a Meta Mensal */}
       {isLimitModalOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center">
@@ -1054,6 +1197,9 @@ export function ProfilePage() {
                     {usernameStatus === "taken" && <XCircle size={15} className="text-orange" />}
                   </div>
                 </div>
+                {usernameStatus === "taken" && (
+                  <p className="text-[10px] text-orange font-bold mt-1.5 pl-1 animate-in fade-in">Este nome de usuário já está em uso.</p>
+                )}
               </div>
 
               <div>
@@ -1078,6 +1224,9 @@ export function ProfilePage() {
                     {cpfStatus === "taken" && <XCircle size={15} className="text-orange" />}
                   </div>
                 </div>
+                {cpfStatus === "taken" && (
+                  <p className="text-[10px] text-orange font-bold mt-1.5 pl-1 animate-in fade-in">Este celular já está cadastrado.</p>
+                )}
               </div>
 
               <div>
@@ -1322,6 +1471,17 @@ export function ProfilePage() {
           <span className="text-xs font-bold text-center">{currencyError}</span>
         </div>
       )}
+
+      {/* Admin Panel Modal */}
+      {isAdminModalOpen && (
+        <AdminPanel onClose={() => setIsAdminModalOpen(false)} />
+      )}
+
+      <NotificationSheet
+        open={isNotificationOpen}
+        onClose={() => setIsNotificationOpen(false)}
+        onNotificationsUpdated={checkUnreadNotifications}
+      />
 
     </div>
   );

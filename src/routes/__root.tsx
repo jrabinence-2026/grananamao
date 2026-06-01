@@ -117,6 +117,41 @@ function RootShell({ children }: { children: React.ReactNode }) {
   );
 }
 
+import { useStore } from "@/lib/store";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { X, BellRing } from "lucide-react";
+
+function AppContent() {
+  const { user, logout } = useStore();
+  
+  if (user?.is_blocked) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-navy px-4 text-center animate-fade-in">
+        <div className="h-16 w-16 bg-red-500/10 rounded-full flex items-center justify-center mb-4">
+          <span className="text-red-500 text-3xl">🚫</span>
+        </div>
+        <h1 className="text-2xl font-bold text-cream mb-2">Conta Suspensa</h1>
+        <p className="text-cream-muted text-sm max-w-xs mx-auto mb-8">
+          O acesso a esta conta foi temporariamente bloqueado por um administrador.
+        </p>
+        <button 
+          onClick={() => logout()}
+          className="px-6 py-3 bg-navy-elevated border border-cream/10 rounded-xl text-cream font-semibold hover:bg-cream/5 transition-colors"
+        >
+          Sair da Conta
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app-shell relative">
+      <Outlet />
+    </div>
+  );
+}
+
 /**
  * Componente principal envolto pelos provedores globais do React Query e da Store local.
  */
@@ -125,10 +160,9 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <StoreProvider>
-        <div className="app-shell">
-          <Outlet />
-        </div>
+        <AppContent />
       </StoreProvider>
     </QueryClientProvider>
   );
 }
+

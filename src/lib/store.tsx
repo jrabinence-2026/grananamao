@@ -40,6 +40,9 @@ interface Store {
     avatar_key?: string;
     custom_avatar_base64?: string;
     monthly_limit: number;
+    is_admin?: boolean;
+    is_blocked?: boolean;
+    last_seen?: string;
   } | null;
   isAuthed: boolean;
   theme: "dark" | "light";
@@ -62,6 +65,8 @@ interface Store {
   reloadProfile: () => Promise<void>;
   // Atualiza os dados do usuário no estado local imediatamente (otimista)
   updateUserLocal: (updates: Partial<Store["user"]>) => void;
+  monthlyLimits: Record<string, number>;
+  updateMonthlyLimit: (month: string, value: number) => Promise<void>;
 }
 
 // Criação do contexto do React para compartilhamento global de estado
@@ -75,6 +80,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [user, setUser] = useState<Store["user"]>(null);
+  const [monthlyLimits, setMonthlyLimits] = useState<Record<string, number>>(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem("fintrack.monthly_limits");
+      return cached ? JSON.parse(cached) : {};
+    }
+    return {};
+  });
   const [isAuthed, setAuthed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -113,7 +125,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // 1. Busca perfil do usuário
       const { data, error } = await supabase
           .from("profiles")
-          .select("id, name, email, username, phone, birth_date, monthly_limit, avatar_key, custom_avatar_base64")
+          .select("id, name, email, username, phone, birth_date, monthly_limit, avatar_key, custom_avatar_base64, is_admin, is_blocked, last_seen")
           .eq("id", userId)
           .single();
           
@@ -127,8 +139,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           birth_date: data.birth_date,
           avatar_key: data.avatar_key || undefined,
           custom_avatar_base64: data.custom_avatar_base64 || undefined,
-          monthly_limit: Number(data.monthly_limit ?? 0)
+          monthly_limit: Number(data.monthly_limit ?? 0),
+          is_admin: Boolean(data.is_admin),
+          is_blocked: Boolean(data.is_blocked),
+          last_seen: data.last_seen || undefined,
         });
+
+        // Atualiza silenciosamente o last_seen para indicar que o usuário está ativo imediatamente
+        const now = new Date();
+        supabase.from("profiles").update({ last_seen: now.toISOString() }).eq("id", userId).then();
 
         // 2. Busca lançamentos (transactions) do banco
         const { data: txData } = await supabase
@@ -165,6 +184,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             current: Number(g.current)
           }));
           setGoals(mappedGoals);
+        }
+
+        // 4. Busca limites mensais (monthly_limits) do banco (com fallback seguro)
+        try {
+          const { data: limitsData } = await supabase
+            .from("monthly_limits")
+            .select("month, value")
+            .eq("user_id", userId);
+          if (limitsData) {
+            const map: Record<string, number> = {};
+            limitsData.forEach(item => {
+              map[item.month] = Number(item.value);
+            });
+            setMonthlyLimits(map);
+            localStorage.setItem("fintrack.monthly_limits", JSON.stringify(map));
+          }
+        } catch (e) {
+          console.warn("Table monthly_limits might not exist yet, using localStorage fallback.");
         }
 
       } else {
@@ -289,7 +326,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    // Heartbeat: atualiza last_seen a cada 2 minutos para o admin detectar quem está online
+    const heartbeat = setInterval(async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        supabase
+          .from("profiles")
+          .update({ last_seen: new Date().toISOString() })
+          .eq("id", session.user.id)
+          .then();
+      }
+    }, 2 * 60 * 1000); // 2 minutos
+
+    return () => {
+      subscription.unsubscribe();
+      clearInterval(heartbeat);
+    };
   }, []);
 
   const value: Store = useMemo(
@@ -545,8 +597,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updateUserLocal: (updates) => {
         setUser((prev) => prev ? { ...prev, ...updates } : null);
       },
+
+      updateMonthlyLimit: async (month: string, value: number) => {
+        if (!user) return;
+        const updated = { ...monthlyLimits, [month]: value };
+        setMonthlyLimits(updated);
+        localStorage.setItem("fintrack.monthly_limits", JSON.stringify(updated));
+
+        try {
+          await supabase
+            .from("monthly_limits")
+            .upsert({ user_id: user.id, month, value }, { onConflict: "user_id,month" });
+          
+          // Se for o mês corrente, sincroniza também com o perfil (profiles.monthly_limit)
+          const now = new Date();
+          const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+          if (month === currentMonthStr) {
+            await supabase
+              .from("profiles")
+              .update({ monthly_limit: value })
+              .eq("id", user.id);
+            setUser((prev) => prev ? { ...prev, monthly_limit: value } : null);
+          }
+        } catch (e) {
+          console.error("Failed to upsert monthly limit to Supabase:", e);
+        }
+      },
+
+      monthlyLimits,
     }),
-    [transactions, goals, user, isAuthed, theme, initializing, loading, authError],
+    [transactions, goals, user, isAuthed, theme, initializing, loading, authError, monthlyLimits],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

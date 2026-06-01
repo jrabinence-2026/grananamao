@@ -8,6 +8,7 @@ import { GoalsPage as GoalsView } from "@/pages/GoalsPage";
 import { ProfilePage as ProfileView } from "@/pages/ProfilePage";
 import { BottomNav } from "@/components/BottomNav";
 import { useStore } from "@/lib/store";
+import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 
 // Schema de validação dos parâmetros de busca
 const homeSearchSchema = z.object({
@@ -53,6 +54,9 @@ function DashboardWrapper() {
 
       {/* Barra de navegação inferior controlada */}
       <BottomNav activeTab={activeTab} onChangeTab={setActiveTab as any} />
+
+      {/* Prompt de Instalação PWA */}
+      <PWAInstallPrompt />
     </div>
   );
 }

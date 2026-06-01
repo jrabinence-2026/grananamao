@@ -1,7 +1,7 @@
-// Tipo de transação financeira: entrada (income) ou saída (expense)
-export type TxType = "income" | "expense";
+// Tipo de transação financeira: entrada (income), saída (expense) ou investimento (investment)
+export type TxType = "income" | "expense" | "investment";
 
-// Estrutura para uma categoria de despesa/receita
+// Estrutura para uma categoria de despesa/receita/investimento
 export interface Category {
   id: string;
   label: string;
@@ -47,11 +47,20 @@ export const INCOME_CATEGORIES: Category[] = [
   { id: "outros", label: "Outros", color: "#EDDABA", icon: "MoreHorizontal" },
 ];
 
+// Lista estática de categorias padrão para Investimentos
+export const INVESTMENT_CATEGORIES: Category[] = [
+  { id: "investimento_geral", label: "Investimento", color: "#3B82F6", icon: "TrendingUp" },
+  { id: "cofrinho", label: "Cofrinho", color: "#EC4899", icon: "PiggyBank" },
+  { id: "poupanca", label: "Poupança", color: "#10B981", icon: "DollarSign" },
+  { id: "cripto", label: "Cripto", color: "#F59E0B", icon: "Bitcoin" },
+  { id: "outros", label: "Outros", color: "#EDDABA", icon: "MoreHorizontal" },
+];
+
 // 2. FUNCIONALIDADE: União dinâmica das categorias para garantir o correto funcionamento dos utilitários
 export const CATEGORIES: Category[] = [];
 const seenIds = new Set<string>();
 
-[...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES].forEach((c) => {
+[...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES, ...INVESTMENT_CATEGORIES].forEach((c) => {
   if (!seenIds.has(c.id)) {
     seenIds.add(c.id);
     CATEGORIES.push(c);
@@ -64,4 +73,5 @@ const seenIds = new Set<string>();
  */
 export const categoryById = (id: string) =>
   CATEGORIES.find((c) => c.id === id) ?? CATEGORIES[CATEGORIES.length - 1];
+
 
