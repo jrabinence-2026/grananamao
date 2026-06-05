@@ -4,6 +4,7 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 import tailwindcss from "@tailwindcss/vite";
 import { cloudflare } from "@cloudflare/vite-plugin";
+import { nitro } from "nitro/vite";
 
 export default defineConfig(({ command }) => {
   const plugins = [
@@ -23,11 +24,15 @@ export default defineConfig(({ command }) => {
   ];
 
   if (command === "build") {
-    plugins.push(
-      cloudflare({
-        viteEnvironment: { name: "ssr" },
-      })
-    );
+    if (process.env.VERCEL) {
+      plugins.push(nitro());
+    } else {
+      plugins.push(
+        cloudflare({
+          viteEnvironment: { name: "ssr" },
+        })
+      );
+    }
   }
 
   return {
