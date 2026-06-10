@@ -66,7 +66,7 @@ import { AdminPanel } from "@/components/AdminPanel";
  * - Botão de sair da conta.
  */
 export function ProfilePage() {
-  const { user, logout, reloadProfile, updateUserLocal, theme, toggleTheme, updateMonthlyLimit } = useStore();
+  const { user, logout, reloadProfile, updateUserLocal, theme, toggleTheme, updateMonthlyLimit, loading } = useStore();
   const navigate = useNavigate();
 
   // Estados para edição de dados pessoais
@@ -932,9 +932,15 @@ export function ProfilePage() {
         {/* 10. FUNCIONALIDADE: Botão de Sair da conta (aguarda logout assíncrono do Supabase) */}
         <button
           onClick={async () => { await logout(); navigate({ to: "/" }); }}
-          className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl bg-navy-elevated border border-cream/10 active:border-orange/20 text-orange font-bold transition-all text-sm"
+          disabled={loading}
+          className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl bg-navy-elevated border border-cream/10 active:border-orange/20 text-orange font-bold transition-all text-sm disabled:opacity-60"
         >
-          <LogOut size={16} /> Sair da conta
+          {loading ? (
+            <Loader2 size={16} className="animate-spin" />
+          ) : (
+            <LogOut size={16} />
+          )}
+          {loading ? "Saindo..." : "Sair da conta"}
         </button>
 
       </div>

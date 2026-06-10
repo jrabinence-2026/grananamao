@@ -120,10 +120,10 @@ function RootShell({ children }: { children: React.ReactNode }) {
 import { useStore } from "@/lib/store";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { X, BellRing } from "lucide-react";
+import { X, BellRing, Loader2 } from "lucide-react";
 
 function AppContent() {
-  const { user, logout } = useStore();
+  const { user, logout, loading } = useStore();
   
   if (user?.is_blocked) {
     return (
@@ -137,9 +137,11 @@ function AppContent() {
         </p>
         <button 
           onClick={() => logout()}
-          className="px-6 py-3 bg-navy-elevated border border-cream/10 rounded-xl text-cream font-semibold hover:bg-cream/5 transition-colors"
+          disabled={loading}
+          className="px-6 py-3 bg-navy-elevated border border-cream/10 rounded-xl text-cream font-semibold hover:bg-cream/5 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
         >
-          Sair da Conta
+          {loading && <Loader2 size={16} className="animate-spin" />}
+          {loading ? "Saindo..." : "Sair da Conta"}
         </button>
       </div>
     );

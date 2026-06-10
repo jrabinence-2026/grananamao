@@ -435,6 +435,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setLoading(true);
         setAuthError(null);
 
+        // Atraso mínimo de 1.2 segundos para feedback visual do spinner
+        const delayPromise = new Promise((resolve) => setTimeout(resolve, 1200));
+
         // Busca o e-mail pelo celular, username ou e-mail via função SQL security definer
         const { data: foundEmail, error: rpcError } = await supabase
           .rpc("get_email_by_identifier", { identifier: identifier.trim() });
@@ -459,7 +462,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           } else {
             setAuthError(error.message);
           }
+          setLoading(false);
+          return;
         }
+
+        // Aguarda o atraso visual terminar antes de remover o estado de carregamento
+        await delayPromise;
         setLoading(false);
       },
 
@@ -568,6 +576,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // 14. FUNCIONALIDADE: Logout real via Supabase — encerra a sessão ativa
       logout: async () => {
         setLoading(true);
+        // Atraso mínimo de 1.2 segundos para feedback visual do spinner na tela de origem
+        await new Promise((resolve) => setTimeout(resolve, 1200));
         await supabase.auth.signOut();
         setLoading(false);
       },
