@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "@tanstack/react-router";
-import { Bell, ArrowDownLeft, ArrowUpRight, TrendingUp, Pencil } from "lucide-react";
+import { Bell, ArrowDownLeft, ArrowUpRight, TrendingUp, Pencil, Eye, EyeOff } from "lucide-react";
 import { useStore, fmtBRL } from "@/lib/store";
 import { CategoryIcon } from "@/components/CategoryIcon";
 import { categoryById } from "@/lib/types";
@@ -52,6 +52,22 @@ export function HomePage() {
 
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
+
+  const [showBalance, setShowBalance] = useState(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem("fintrack.show_balance");
+      return cached !== "false";
+    }
+    return true;
+  });
+
+  const toggleShowBalance = () => {
+    setShowBalance((prev) => {
+      const next = !prev;
+      localStorage.setItem("fintrack.show_balance", String(next));
+      return next;
+    });
+  };
 
   const checkUnreadNotifications = async () => {
     const { data, error } = await supabase
@@ -352,8 +368,19 @@ export function HomePage() {
       <div className="px-4 space-y-4 py-4">
         {/* Card do Saldo Atual */}
         <div className="rounded-2xl bg-navy-elevated p-5 border border-cream/5">
-          <p className="text-xs text-cream-muted">Saldo atual</p>
-          <p className="text-3xl font-extrabold text-cream mt-1">{fmtBRL(balance)}</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-cream-muted">Saldo atual</p>
+            <button
+              onClick={toggleShowBalance}
+              className="text-cream-muted hover:text-cream transition-colors p-1"
+              title={showBalance ? "Ocultar saldo" : "Mostrar saldo"}
+            >
+              {showBalance ? <Eye size={16} /> : <EyeOff size={16} />}
+            </button>
+          </div>
+          <p className="text-3xl font-extrabold text-cream mt-1">
+            {showBalance ? fmtBRL(balance) : "R$ •••••"}
+          </p>
           <p className="text-[11px] text-cream-muted mt-2">
             Atualizado agora
           </p>
@@ -451,7 +478,9 @@ export function HomePage() {
               </span>
               <span className="text-[10px] text-cream-muted font-medium truncate">Entradas</span>
             </div>
-            <p className="text-sm font-bold truncate" style={{ color: "#4CAF50" }}>{fmtBRL(income)}</p>
+            <p className="text-sm font-bold truncate" style={{ color: "#4CAF50" }}>
+              {showBalance ? fmtBRL(income) : "R$ •••••"}
+            </p>
           </div>
           {/* Card de Saídas */}
           <div className="rounded-2xl bg-navy-elevated p-3 border border-cream/5 min-w-0">
@@ -461,7 +490,9 @@ export function HomePage() {
               </span>
               <span className="text-[10px] text-cream-muted font-medium truncate">Saídas</span>
             </div>
-            <p className="text-sm font-bold text-orange truncate">{fmtBRL(expense)}</p>
+            <p className="text-sm font-bold text-orange truncate">
+              {showBalance ? fmtBRL(expense) : "R$ •••••"}
+            </p>
           </div>
           {/* Card de Investimento */}
           <div className="rounded-2xl bg-navy-elevated p-3 border border-cream/5 min-w-0">
@@ -471,7 +502,9 @@ export function HomePage() {
               </span>
               <span className="text-[10px] text-cream-muted font-medium truncate">Investido</span>
             </div>
-            <p className="text-sm font-bold text-blue-500 truncate">{fmtBRL(investment)}</p>
+            <p className="text-sm font-bold text-blue-500 truncate">
+              {showBalance ? fmtBRL(investment) : "R$ •••••"}
+            </p>
           </div>
         </div>
 
@@ -508,7 +541,7 @@ export function HomePage() {
                   className="text-sm font-semibold"
                   style={{ color: t.type === "income" ? "#4CAF50" : "#FF5404" }}
                 >
-                  {t.type === "income" ? "+" : "-"} {fmtBRL(t.amount)}
+                  {t.type === "income" ? "+" : "-"} {showBalance ? fmtBRL(t.amount) : "R$ •••••"}
                 </span>
               </li>
             );
