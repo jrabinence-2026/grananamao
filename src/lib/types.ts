@@ -34,6 +34,7 @@ export const EXPENSE_CATEGORIES: Category[] = [
   { id: "transporte", label: "Transporte", color: "#F2C94C", icon: "Car" },
   { id: "saude", label: "Saúde", color: "#56C271", icon: "HeartPulse" },
   { id: "lazer", label: "Lazer", color: "#C490E4", icon: "Gamepad2" },
+  { id: "compras", label: "Compras", color: "#EC4899", icon: "ShoppingCart" },
   { id: "outros", label: "Outros", color: "#EDDABA", icon: "MoreHorizontal" },
 ];
 
